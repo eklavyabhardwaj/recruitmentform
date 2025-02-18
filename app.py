@@ -1,167 +1,193 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, abort
 import requests
 import pandas as pd
 import random
 import os
-import re
 from werkzeug.utils import secure_filename
 
-random_number_hr = random.randint(1068468484867187618761871687171, 9868468484867187618761871687171)
-
 app = Flask(__name__)
-app.secret_key = str(random_number_hr)
+app.secret_key = str(random.randint(1000000000000000, 9999999999999999))
 
-base_url = 'https://erpv14.electrolabgroup.com/'
-endpoint = 'api/resource/Job Applicant'
-url = base_url + endpoint
+# ----------------------------------------------------------------
+#  ERP Configuration
+# ----------------------------------------------------------------
+BASE_URL = 'https://erpv14.electrolabgroup.com/'
+JOB_OPENING_ENDPOINT = 'api/resource/Job Opening'
+JOB_APPLICANT_ENDPOINT = 'api/resource/Job Applicant'
 
-headers = {
+AUTH_HEADERS = {
     'Authorization': 'token 3ee8d03949516d0:6baa361266cf807',
     'Content-Type': 'application/json'
 }
 
+# Folder for saving uploaded resumes
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'Resume Attachments')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-@app.route('/get_job_titles', methods=['GET'])
-def get_job_titles():
-    base_url = 'https://erpv14.electrolabgroup.com/'
-    endpoint = 'api/resource/Job Opening'
-    url = base_url + endpoint
+# Allowed file extensions for resume upload
+ALLOWED_EXTENSIONS = {'pdf'}
 
+# ----------------------------------------------------------------
+#  Utility Functions
+# ----------------------------------------------------------------
+
+def fetch_job_list():
+    """ Fetch all open job openings from ERP. """
+    url = BASE_URL + JOB_OPENING_ENDPOINT
     params = {
-        'fields': '["name","designation","status"]',
-        'limit_start': 0, 
-        'limit_page_length': 100000000000,
+        'fields': '["name","designation","status","territory","qualification"]',
+        'limit_start': 0,
+        'limit_page_length': 999999999
     }
-
-    headers = {
-        'Authorization': 'token 3ee8d03949516d0:6baa361266cf807'
-    }
-
     try:
-        response = requests.get(url, params=params, headers=headers)
-        if response.status_code == 200:
-            data = response.json()
-            df = pd.DataFrame(data['data'])
-            # Only proceed if 'status' column exists
-            if 'status' in df.columns:
+        resp = requests.get(url, headers=AUTH_HEADERS, params=params)
+        if resp.status_code == 200:
+            data = resp.json()
+            df = pd.DataFrame(data.get('data', []))
+            if not df.empty and 'status' in df.columns:
+                # Filter only open positions
                 df = df[df['status'] == 'Open']
-                df.rename(columns={'name': 'job_title'}, inplace=True)
-                final_df = df.drop_duplicates(subset='job_title', keep='first')
-                job_title_designation = final_df[['job_title', 'designation']].dropna().to_dict(orient='records')
-                return jsonify(job_title_designation)
-        return jsonify({"error": "Failed to fetch data from API"}), 500
+                return df.to_dict(orient='records')
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print("Error fetching job list:", e)
+    return []
+
+def fetch_job_details(job_id):
+    """ Fetch details for one job opening from ERP. """
+    url = f"{BASE_URL}{JOB_OPENING_ENDPOINT}/{job_id}"
+    params = {
+        'fields': '["name","description","custom_no_of_vacancy","territory","designation","qualification"]'
+    }
+    try:
+        resp = requests.get(url, headers=AUTH_HEADERS, params=params)
+        if resp.status_code == 200:
+            data = resp.json()
+            if 'data' in data:
+                return data['data']
+    except Exception as e:
+        print("Error fetching job details:", e)
+    return None
+
+# ----------------------------------------------------------------
+#  Routes
+# ----------------------------------------------------------------
 
 @app.route('/')
-def home():
-    return render_template('index.html')
+def job_list():
+    """ Landing Page: Displays a list of open jobs. """
+    search_query = request.args.get('search', '').strip().lower()
+    qualification_filter = request.args.get('qualification', '').strip()
+    location_filter = request.args.get('location', '').strip()
+
+    jobs = fetch_job_list()
+
+    qualification_options = sorted({job.get('designation', '') for job in jobs if job.get('designation', '')})
+    location_options = sorted({job.get('territory', '') for job in jobs if job.get('territory', '')})
+
+    filtered_jobs = []
+    for job in jobs:
+        if search_query:
+            if (search_query not in job.get('name', '').lower() and
+                search_query not in job.get('designation', '').lower()):
+                continue
+        if qualification_filter and (job.get('designation', '') != qualification_filter):
+            continue
+        if location_filter and (job.get('territory', '') != location_filter):
+            continue
+        filtered_jobs.append(job)
+
+    return render_template('job_list.html',
+                           jobs=filtered_jobs,
+                           qualification_options=qualification_options,
+                           locations=location_options,
+                           search=search_query,
+                           qualification=qualification_filter,
+                           location=location_filter)
+
+@app.route('/job/<job_id>')
+def job_details(job_id):
+    """ Job Details Page: Renders details for a single job. """
+    job = fetch_job_details(job_id)
+    if not job:
+        abort(404, description="Job not found")
+    return render_template('job_details.html', job=job)
+
+@app.route('/apply')
+def apply():
+    """ Application Form Page. """
+    job_title = request.args.get('job_title', '')
+    designation = request.args.get('designation', '')
+    return render_template('index.html', job_title=job_title, designation=designation)
 
 @app.route('/submit', methods=['POST'])
-def submit_form():
+def submit():
+    """ Handles the submission of the job application form. """
     try:
-        os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
         random_number = random.randint(100000, 999999)
-        applicant_name = request.form['applicant_name']
-        job_title = request.form['job_title']
-        email_id = request.form['email_id']
-        designation = request.form['designation']
-        phone_number = request.form['phone_number']
-        status = request.form['status']
-        country = request.form['country']
-        cover_letter = request.form['cover_letter']
-        lower_range = request.form['lower_range']
-        upper_range = request.form['upper_range']
-        resume_link = request.form['resume_link']
 
+        # Retrieve form data
+        applicant_name = request.form.get('applicant_name')
+        job_title = request.form.get('job_title')
+        email_id = request.form.get('email_id')
+        designation = request.form.get('designation')
+        phone_number = request.form.get('phone_number')
+        country = request.form.get('country')
+        cover_letter = request.form.get('cover_letter')
+        lower_range = request.form.get('lower_range')
+        upper_range = request.form.get('upper_range')
+        resume_link = request.form.get('resume_link')
+        source = request.form.get('source')
+
+        # Handle resume file upload
         filename = None
         if 'resume_attachment' in request.files:
             resume_file = request.files['resume_attachment']
             if resume_file and resume_file.filename:
-                # Get file extension
-                file_extension = os.path.splitext(resume_file.filename)[1]
-                # Create temporary filename
-                temp_filename = f"resume_{random_number}{file_extension}"
-                temp_filepath = os.path.join(UPLOAD_FOLDER, temp_filename)
-                
-                # Save the file with temporary name
-                resume_file.save(temp_filepath)
-                filename = temp_filename
+                filename = secure_filename(resume_file.filename)
+                if '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS:
+                    file_path = os.path.join(UPLOAD_FOLDER, filename)
+                    resume_file.save(file_path)
+                else:
+                    flash("Invalid file format! Please upload a PDF.", "error")
+                    return redirect(url_for('apply'))
 
-        # Prepare work experience data
-        work_experience_data = []
-        company_names = request.form.getlist('company_name[]')
-        for i in range(len(company_names)):
-            work_experience_data.append({
-                "company_name": request.form.getlist('company_name[]')[i],
-                "designation": request.form.getlist('designation[]')[i],
-                "salary": request.form.getlist('salary[]')[i],
-                "address": request.form.getlist('address[]')[i],
-                "contact": request.form.getlist('contact[]')[i],
-                "custom_from": request.form.getlist('custom_from[]')[i],
-                "custom_to": request.form.getlist('custom_to[]')[i],
-                "total_experience": request.form.getlist('total_experience[]')[i]
-            })
-
-        # Prepare academic data
-        academic_data = []
-        school_univs = request.form.getlist('school_univ[]')
-        for i in range(len(school_univs)):
-            academic_data.append({
-                "school_univ": request.form.getlist('school_univ[]')[i],
-                "qualification": request.form.getlist('qualification[]')[i],
-                "level": request.form.getlist('level[]')[i],
-                "year_of_passing": request.form.getlist('year_of_passing[]')[i],
-                "class_per": request.form.getlist('class_per[]')[i],
-                "maj_opt_subj": request.form.getlist('maj_opt_subj[]')[i]
-            })
-
-        # Prepare the final payload
-        form_data = {
+        # Build payload for ERP API
+        data_payload = {
             "applicant_name": applicant_name,
             "job_title": job_title,
             "email_id": email_id,
             "designation": designation,
             "phone_number": phone_number,
-            "status": status,
             "country": country,
+            "source": source,
             "cover_letter": cover_letter,
             "lower_range": lower_range,
             "upper_range": upper_range,
             "resume_attachment": filename if filename else "",
-            "resume_link": resume_link,
-            "custom_education": academic_data,
-            "custom_external_work_history": work_experience_data
+            "resume_link": resume_link
         }
 
-        # Submit to API
-        response = requests.post(url, json=form_data, headers=headers)
-
-        if response.status_code == 200:
-            # Get the job applicant ID from the response
-            response_data = response.json()
-            if filename:
-                new_name = f"{response_data['data']['name']}.pdf"
-                old_path = os.path.join(UPLOAD_FOLDER, filename)
-                new_path = os.path.join(UPLOAD_FOLDER, new_name)
-                
-                if os.path.exists(old_path):
-                    os.rename(old_path, new_path)
-            flash('FORM SUBMITTED SUCCESSFULLY!', 'success')
+        # Send data to ERP system
+        resp = requests.post(BASE_URL + JOB_APPLICANT_ENDPOINT, json=data_payload, headers=AUTH_HEADERS)
+        if resp.status_code == 200:
+            flash('Form submitted successfully!', 'success')
+            return redirect(url_for('apply'))  # Stay on the page to show message
         else:
-            flash(f'Error: {response.status_code} - {response.text}', 'error')
+            flash(f"Error: {resp.status_code} - {resp.text}", 'error')
 
     except Exception as e:
-        flash(f'Error occurred: {str(e)}', 'error')
+        flash(f"Error occurred: {str(e)}", 'error')
 
-    return redirect(url_for('home'))
+    return redirect(url_for('apply'))
 
 @app.route('/terms')
-def tnc():
+def terms():
+    """ Terms & Conditions Page. """
     return render_template('tnc.html')
+
+# ----------------------------------------------------------------
+#  Main
+# ----------------------------------------------------------------
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000, debug=True)
-    #app.run(debug=True)
