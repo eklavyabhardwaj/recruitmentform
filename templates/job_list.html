@@ -5,6 +5,8 @@
   <!-- Ensure proper scaling on mobile devices -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Job Openings</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/ELEC.png') }}">
+
   <style>
     /* Global Reset */
     * {
@@ -16,6 +18,9 @@
       font-family: Arial, sans-serif;
       background-color: #f4f4f4;
       padding: 10px;
+      /* Firefox scrollbar styling */
+      scrollbar-width: thin;
+      scrollbar-color: #888 #f4f4f4;
     }
     header {
       background-color: #2f2f2f;
@@ -35,7 +40,7 @@
       margin: 0;
     }
     .header-logo {
-      max-height: 80px; /* Increased size */
+      max-height: 80px;
       width: auto;
     }
     .container {
@@ -97,6 +102,7 @@
       text-decoration: none;
       color: #00c0c0;
       font-weight: bold;
+      cursor: pointer;
     }
     @media (max-width: 768px) {
       .container {
@@ -111,6 +117,60 @@
         width: 100%;
       }
     }
+    /* Enlarged Modal Styles */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+      background-color: rgba(0,0,0,0.5);
+    }
+    .modal-content {
+      background-color: #fff;
+      margin: 1% auto;  /* small top margin so it’s more centered */
+      width: 90%;
+      height: 90vh;     /* take up 90% of viewport height */
+      border-radius: 5px;
+      position: relative;
+      overflow: hidden; /* so the iframe can fill this space */
+    }
+    .close {
+      position: absolute;
+      top: 10px;
+      right: 15px;
+      color: #aaa;
+      font-size: 28px;
+      font-weight: bold;
+      cursor: pointer;
+      z-index: 1; /* ensure it's on top of the iframe */
+    }
+    .close:hover,
+    .close:focus {
+      color: #000;
+    }
+    #jobDetailIframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+    /* Custom Scrollbar Styling for WebKit Browsers */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f4f4f4;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #888;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #555;
+    }
   </style>
 </head>
 <body>
@@ -123,11 +183,12 @@
       <h1>Job Openings</h1>
     </div>
   </header>
+
   <div class="container">
     <form class="search-filters" method="GET" action="{{ url_for('job_list') }}">
       <input type="text" name="search" placeholder="Search..." value="{{ search }}" />
       <select name="qualification">
-        <option value="">All Qualification</option>
+        <option value="">All Job Title</option>
         {% for qual in qualification_options %}
           <option value="{{ qual }}" {% if qual == qualification %}selected{% endif %}>{{ qual }}</option>
         {% endfor %}
@@ -148,7 +209,8 @@
             <h2><strong>{{ job.designation }}</strong></h2>
             <p>{{ job.name }}</p>
             <p><strong>Location:</strong> {{ job.territory }}</p>
-            <a href="{{ url_for('job_details', job_id=job.name) }}">More Details</a>
+            <!-- Job details will load in an enlarged modal -->
+            <a href="#" class="job-detail-link" data-job-id="{{ job.name }}">More Details</a>
           </div>
         {% endfor %}
       </div>
@@ -156,5 +218,46 @@
       <p>No open positions at this time.</p>
     {% endif %}
   </div>
+
+  <!-- Enlarged Modal for dynamically displaying job details -->
+  <div id="jobDetailModal" class="modal">
+    <div class="modal-content">
+      <span class="close">&times;</span>
+      <!-- The iframe will show the entire job_details.html -->
+      <iframe id="jobDetailIframe"></iframe>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", function() {
+      const modal = document.getElementById('jobDetailModal');
+      const iframe = document.getElementById('jobDetailIframe');
+      const closeModal = modal.querySelector('.close');
+
+      // When a job detail link is clicked, load the job details into the iframe and show the modal
+      document.querySelectorAll('.job-detail-link').forEach(link => {
+        link.addEventListener('click', function(event) {
+          event.preventDefault();
+          const jobId = this.getAttribute('data-job-id');
+          iframe.src = '/job/' + jobId;
+          modal.style.display = 'block';
+        });
+      });
+
+      // Close the modal when the close button is clicked
+      closeModal.addEventListener('click', function() {
+        modal.style.display = 'none';
+        iframe.src = '';  // clear out the iframe
+      });
+
+      // Also close the modal when clicking outside the modal content
+      window.addEventListener('click', function(event) {
+        if (event.target == modal) {
+          modal.style.display = 'none';
+          iframe.src = '';
+        }
+      });
+    });
+  </script>
 </body>
 </html>

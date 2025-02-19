@@ -5,94 +5,104 @@
   <!-- Ensure proper scaling on mobile devices -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Job Details</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='images/ELEC.png') }}">
+
   <style>
     body {
       font-family: Arial, sans-serif;
       background-color: #f4f4f4;
       margin: 0;
-      padding: 10px;
-    }
-    header {
-      background-color: #2f2f2f;
-      padding: 15px;
-    }
-    .header-content {
-      display: flex;
-      align-items: center;
-      justify-content: start;
-      gap: 20px;
-    }
-    .header-content h1 {
-      color: #fff;
-      font-size: 24px;
-      margin: 0;
-    }
-    .header-logo {
-      max-height: 80px; /* Increased size */
-      width: auto;
+      padding: 20px;
+      line-height: 1.6; /* Improve readability */
+      /* Firefox scrollbar styling */
+      scrollbar-width: thin;
+      scrollbar-color: #888 #f4f4f4;
     }
     .container {
-      width: 100%;
       max-width: 900px;
-      margin: 20px auto;
+      margin: 0 auto;
       background: #fff;
       padding: 20px;
       border-radius: 5px;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     h2 {
       font-size: 24px;
       margin-bottom: 10px;
     }
-    p {
-      font-size: 16px;
-      line-height: 1.5;
-      margin-bottom: 10px;
+    .section-title {
+      font-weight: bold;
+      margin-top: 20px;
+      margin-bottom: 5px;
     }
+    .description {
+      margin-bottom: 20px;
+    }
+    p {
+      margin-bottom: 8px;
+    }
+    /* "Apply Now" button styling */
     .btn-apply {
       display: inline-block;
-      padding: 10px 15px;
+      padding: 12px 18px;
       background-color: #00c0c0;
       color: #fff;
       text-decoration: none;
       border-radius: 4px;
-      margin-top: 20px;
+      margin: 10px 0;
     }
     .btn-apply:hover {
       background-color: #00e0e0;
     }
     @media (max-width: 600px) {
+      .container {
+        padding: 15px;
+        margin: 10px;
+      }
       h2 {
         font-size: 20px;
       }
-      p {
-        font-size: 14px;
-      }
-      .container {
-        padding: 15px;
-        margin: 10px auto;
-      }
+    }
+    /* Custom Scrollbar Styling for WebKit Browsers */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f4f4f4;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #888;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #555;
     }
   </style>
 </head>
 <body>
-  <!-- Header with clickable logo -->
-  <header>
-    <div class="header-content">
-      <a href="https://www.electrolabgroup.com/" target="_blank" rel="noopener noreferrer">
-        <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Electrolab Logo" class="header-logo">
-      </a>
-      <h1>Job Details</h1>
-    </div>
-  </header>
   <div class="container">
     <h2>{{ job.designation }}</h2>
-    <p><strong>Description:</strong> {{ (job.description or "N/A")|safe }}</p>
+
+    <!-- Description Section -->
+    <p class="section-title">Job Description:</p>
+    <div class="description">
+      {{ (job.description or "N/A")|safe }}
+    </div>
+
     <p><strong>Number of Vacancies:</strong> {{ job.custom_no_of_vacancy or "N/A" }}</p>
     <p><strong>Territory:</strong> {{ job.territory or "N/A" }}</p>
     <p><strong>Job ID:</strong> {{ job.name or "N/A" }}</p>
     <p><strong>Qualification:</strong> {{ job.qualification or "N/A" }}</p>
-    <a href="{{ url_for('apply', job_title=job.name, designation=job.designation) }}" class="btn-apply">Apply Now</a>
+
+    <!-- Apply Now opens index.html in a new tab -->
+    <a
+      href="{{ url_for('apply', job_title=job.name, designation=job.designation) }}"
+      class="btn-apply"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      Apply Now
+    </a>
   </div>
 </body>
 </html>
