@@ -1,63 +1,124 @@
-import asyncio
-from playwright.async_api import async_playwright, TimeoutError
 import os
+import time
 from pathlib import Path
 
-async def run():
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)  # Set headless to True
-        page = await browser.new_page()
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
-        current_dir = Path(os.getcwd())
-        pdf_folder = current_dir / "Resume Attachments"
 
-        pdf_files = [file.stem for file in pdf_folder.glob("*.pdf")]
+def main():
+    # Set up Chrome options
+    options = webdriver.ChromeOptions()
+    # Run in headless mode; comment out the following line for visual debugging
+    #options.add_argument('--headless')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
 
-        await page.goto("https://erpv14.electrolabgroup.com/login#login")
+    # Initialize the WebDriver (adjust chromedriver path if needed)
+    driver = webdriver.Chrome(options=options)
+    print("Driver initialized.")
 
-        email_address = "slaadmin"
-        password = "slaadmin@123"
+    # Define the folder containing PDF files
+    current_dir = Path(os.getcwd())
+    pdf_folder = current_dir / "Resume Attachments"
 
-        await page.fill("#login_email", email_address)
-        await page.fill("#login_password", password)
+    # Get a list of PDFs (using the file stem, i.e., name without extension)
+    pdf_files = [file.stem for file in pdf_folder.glob("*.pdf")]
+    print(f"Found PDF files: {pdf_files}")
 
-        await page.click(".btn-login")
+    # Navigate to the login page
+    login_url = "https://erpv14.electrolabgroup.com/login#login"
+    print(f"Navigating to login page: {login_url}")
+    driver.get(login_url)
 
-        await page.wait_for_timeout(6000)
+    # Fill in login credentials and click the login button
+    try:
+        driver.find_element(By.CSS_SELECTOR, "#login_email").send_keys("slaadmin")
+        driver.find_element(By.CSS_SELECTOR, "#login_password").send_keys("slaadmin@123")
+        driver.find_element(By.CSS_SELECTOR, ".btn-login").click()
+        print("Login form submitted.")
+    except Exception as e:
+        print(f"Error during login: {e}")
+        driver.quit()
+        return
 
-        for pdf in pdf_files:
-            pdf_name = pdf
-            target_url = f"https://erpv14.electrolabgroup.com/app/job-applicant/{pdf_name}"
+    # Wait for login to complete
+    time.sleep(6)
+    print("Logged in; waited 6 seconds.")
 
-            await page.goto(target_url)
-            await page.wait_for_timeout(2000)
+    # Loop through each PDF file
+    for pdf in pdf_files:
+        pdf_name = pdf
+        target_url = f"https://erpv14.electrolabgroup.com/app/job-applicant/{pdf_name}"
+        print(f"\nProcessing {pdf_name}: Navigating to {target_url}")
+        driver.get(target_url)
+        time.sleep(2)
 
-            try:
-                await page.wait_for_selector("span.pill-label.ellipsis:has-text('Attach File')", timeout=10000)
-                await page.click("span.pill-label.ellipsis:has-text('Attach File')")
-            except TimeoutError:
-                print(f"Skipping {pdf_name}: 'Attach File' button not found")
-                continue
+        # Use an XPath that targets the button element with class 'add-attachment-btn'
+        # and containing the text 'Attach File'
+        xpath_selector = "//button[contains(@class, 'add-attachment-btn') and contains(., 'Attach File')]"
+        try:
+            print(f"Waiting for 'Attach File' button for {pdf_name} using XPath:\n{xpath_selector}")
+            attach_button = WebDriverWait(driver, 15).until(
+                EC.element_to_be_clickable((By.XPATH, xpath_selector))
+            )
+            attach_button.click()
+            print(f"'Attach File' button clicked for {pdf_name}.")
+        except Exception as e:
+            print(f"Skipping {pdf_name}: 'Attach File' button not found. Exception: {e}")
+            continue
 
-            await page.wait_for_timeout(2000)
-            file_path = str(pdf_folder / f"{pdf_name}.pdf")
+        time.sleep(2)
 
-            file_input_selector = "input[type='file']"
-            await page.set_input_files(file_input_selector, file_path)
-            await page.wait_for_timeout(3000)
+        # Construct the full file path for the PDF to upload
+        file_path = str(pdf_folder / f"{pdf_name}.pdf")
+        print(f"Uploading file {file_path} for {pdf_name}.")
 
-            await page.click("button[type='button'].btn.btn-primary.btn-sm.btn-modal-primary")
-            await page.wait_for_timeout(5000)
+        # Wait for the file input element and upload the file
+        try:
+            file_input = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='file']"))
+            )
+            file_input.send_keys(file_path)
+            print(f"File {file_path} uploaded for {pdf_name}.")
+        except Exception as e:
+            print(f"Error uploading file for {pdf_name}: {e}")
+            continue
 
-            try:
-                file_to_delete = pdf_folder / f"{pdf_name}.pdf"
-                if file_to_delete.exists():
-                    file_to_delete.unlink()
-                    print(f"Successfully uploaded & Deleted {pdf_name}.pdf")
-            except Exception as e:
-                print(f"Error deleting {pdf_name}: {e}")
+        time.sleep(3)
 
-        await browser.close()
+        # Click the confirmation button in the modal dialog
+        try:
+            print(f"Waiting for confirmation button for {pdf_name}.")
+            confirm_button = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable(
+                    (By.CSS_SELECTOR, "button[type='button'].btn.btn-primary.btn-sm.btn-modal-primary"))
+            )
+            confirm_button.click()
+            print(f"Confirmation button clicked for {pdf_name}.")
+        except Exception as e:
+            print(f"Error clicking confirmation button for {pdf_name}: {e}")
+            continue
 
-# Run the async function
-asyncio.run(run())
+        # Wait for the upload process to complete
+        time.sleep(5)
+
+        # Delete the PDF file after a successful upload
+        try:
+            file_to_delete = pdf_folder / f"{pdf_name}.pdf"
+            if file_to_delete.exists():
+                file_to_delete.unlink()
+                print(f"Successfully uploaded & deleted {pdf_name}.pdf")
+            else:
+                print(f"File {pdf_name}.pdf not found for deletion.")
+        except Exception as e:
+            print(f"Error deleting {pdf_name}: {e}")
+
+    driver.quit()
+    print("Driver closed. Process completed.")
+
+
+if __name__ == "__main__":
+    main()

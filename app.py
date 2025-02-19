@@ -3,6 +3,7 @@ import requests
 import pandas as pd
 import random
 import os
+import re
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
@@ -26,6 +27,19 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Allowed file extensions for resume upload
 ALLOWED_EXTENSIONS = {'pdf'}
+
+# ----------------------------------------------------------------
+#  Custom Secure Filename Function
+# ----------------------------------------------------------------
+def custom_secure_filename(filename):
+    """
+    This function is similar to Werkzeug's secure_filename,
+    but it allows the "@" character to remain.
+    """
+    # Remove leading/trailing whitespace and replace spaces with underscores
+    filename = filename.strip().replace(" ", "_")
+    # Allow letters, digits, underscores, hyphens, dots, and the "@" symbol
+    return re.sub(r'(?u)[^-\w.@]', '', filename)
 
 # ----------------------------------------------------------------
 #  Utility Functions
@@ -123,8 +137,6 @@ def apply():
 def submit():
     """ Handles the submission of the job application form. """
     try:
-        random_number = random.randint(100000, 999999)
-
         # Retrieve form data
         applicant_name = request.form.get('applicant_name')
         job_title = request.form.get('job_title')
@@ -138,15 +150,18 @@ def submit():
         resume_link = request.form.get('resume_link')
         source = request.form.get('source')
 
-        # Handle resume file upload
+        # Handle resume file upload and rename to the applicant's email address using our custom function
         filename = None
         if 'resume_attachment' in request.files:
             resume_file = request.files['resume_attachment']
             if resume_file and resume_file.filename:
-                filename = secure_filename(resume_file.filename)
-                if '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS:
-                    file_path = os.path.join(UPLOAD_FOLDER, filename)
+                # Check if file extension is allowed
+                if '.' in resume_file.filename and resume_file.filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS:
+                    # Use the email address from the form to create a new filename that retains the "@" character
+                    new_filename = custom_secure_filename(email_id) + ".pdf"
+                    file_path = os.path.join(UPLOAD_FOLDER, new_filename)
                     resume_file.save(file_path)
+                    filename = new_filename
                 else:
                     flash("Invalid file format! Please upload a PDF.", "error")
                     return redirect(url_for('apply'))
@@ -191,3 +206,4 @@ def terms():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000, debug=True)
+    #Pass
